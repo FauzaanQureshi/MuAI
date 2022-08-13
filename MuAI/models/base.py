@@ -1,5 +1,5 @@
 import json
-from typing import Any, Optional
+from typing import Any, Iterable, Mapping, Optional
 from .utils import create_discriminator, create_generator
 from ..api import config as CONFIG
 from ..api.config import Config
@@ -132,6 +132,15 @@ class BaseModel:
         if not model or model.lower() == "discriminator":
             self.discriminator.compile(**kwargs)
 
+    @property
+    def trainable_variables(self):
+        __variables = []
+        if self.generator:
+            __variables += self.generator.trainable_variables
+        if self.discriminator:
+            __variables += self.discriminator.trainable_variables
+        return __variables
+
     def load(self, model: Optional[str] = None, dir=None, latest=True):
         """
         If model is specified, Loads the model.
@@ -175,3 +184,25 @@ class BaseModel:
 
     def __repr__(self) -> str:
         return f"<{self.name} model>"
+
+    def __getattribute__(self, key):
+        try:
+            return super(BaseModel, self).__getattribute__(key)
+        except AttributeError:
+            _vg = _vd = None
+            if self.generator:
+                _vg = getattr(self.generator, key)
+            if self.discriminator:
+                _vd = getattr(self.discriminator, key)
+
+            if _vg is None and _vd is None:
+                return
+            if _vg is None and _vd is not None:
+                return _vd
+            if _vd is None and _vg is not None:
+                return _vg
+            # if isinstance(_vg, Mapping) and isinstance(_vg, Mapping):
+            #     return (_vg, _vd)
+            # if isinstance(_vg, Iterable) and isinstance(_vg, Iterable):
+            #     return _vg + _vd
+            return [_vg, _vd]

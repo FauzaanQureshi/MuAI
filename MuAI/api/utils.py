@@ -8,7 +8,7 @@ __all__ = [
 ]
 
 
-def distribution_strategy(device):
+def distribution_strategy(device: str):
     if device.lower() == "cpu":
         return tf.distribute.get_strategy()
     if device.lower() == "gpu":
@@ -21,6 +21,10 @@ def distribution_strategy(device):
 
 
 @wraps(open)
-def openfile(file, *args, **kwargs):
+def openfile(file: str, *args, **kwargs):
+    """
+    Opens file, given a path, for i/o operations.
+    Creates the intermidiate directories if path doesn't exist.
+    """
     os.makedirs(os.path.dirname(file), exist_ok=True)
     return open(file, *args, **kwargs)

@@ -21,7 +21,6 @@ def InceptionBlock(filters: int, kernels: typing.List, *, inputs, name, **kwargs
     )
     pool = tf.keras.layers.MaxPool1D(pool_size=2, strides=2, padding="same")(conv)
     norm = tf.keras.layers.BatchNormalization()(pool)
-
     return norm
 
 
