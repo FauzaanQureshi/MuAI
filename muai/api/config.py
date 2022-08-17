@@ -25,7 +25,7 @@ class Config(dict):
         For Config objects - config_obj.pretty(to_file)
             @param config is self
         For other objects - Config.pretty(obj, to_file)
-            @param conffig is obj
+            @param config is obj
         """
         stream = openfile(to_file, "w") if to_file else None
         PrettyPrinter(indent=4, sort_dicts=False, compact=False, stream=stream).pprint(
@@ -61,18 +61,22 @@ config = Config(
             kernels=[256, 128, 64],
             activation=tf.nn.relu,
         ),
-        generator=dict(optimizer=tf.optimizers.Adadelta, lr=0.1),
+        generator=dict(optimizer=tf.optimizers.Adamax, opt_kwargs={}),
         discriminator=dict(
-            optimizer=tf.optimizers.Adadelta,
-            lr=0.001,
+            optimizer=tf.optimizers.Adamax,
+            opt_kwargs={},
             conv=dict(filters=[4, 8, 16, 32], kernels=128, activation=tf.nn.relu),
             residual=dict(
                 filters=[4, 4, 4, 16, 4, 4, 4], kernels=16, activation=tf.nn.relu
             ),
         ),
+        checkpoint_dir=".checkpoint",
         data_dir="data",
-        save_dir="models",
         log_dir="logs",
+        save_dir="models",
+        epochs=2,
+        batch_size=256,
+        steps_per_epoch=1,
         verbose=1,
         device="GPU",
     )

@@ -111,7 +111,9 @@ def create_generator(
     conv_filters=[16, 32, 64],
     conv_kernels=[32, 64, 128],
     res_filters=[128, 128, 256, 128, 128],
-    decov_filters=[64, 16, 1],
+    res_kernels=64,
+    deconv_filters=[64, 16, 1],
+    deconv_kernels=128,
     **kwargs,
 ):
     """
@@ -131,17 +133,21 @@ def create_generator(
 
     out = ResidualBlock(
         res_filters,
-        64,
+        res_kernels,
         inputs=out,
         name="ResidualBlock",
         skip_conections=skips[::-1] + skips[1:],
         activation=kwargs.get("activation", config.residual.activation),
     )  # (out)
 
-    for i, filter in enumerate(decov_filters):
+    if isinstance(deconv_kernels, typing.List):
+        assert len(deconv_filters) == len(
+            deconv_kernels
+        ), "Decov kernels and filters length mismatch"
+    for i, filter in enumerate(deconv_filters):
         out = DeconBlock(
             filter,
-            128,
+            deconv_kernels[i],
             inputs=out,
             name=f"Deconvolution_{i}",
             activation=kwargs.get("activation", config.deconv.activation),

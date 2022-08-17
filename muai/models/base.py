@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 import json
 from typing import Any, Iterable, Mapping, Optional
 from .utils import create_discriminator, create_generator
@@ -25,8 +26,10 @@ class BaseModel:
                 "conv_kernels": self.conv_kernels,
                 "res_filters": self.res_filters,
                 "res_kernels": self.res_kernels,
-                "glr": self.glr,
-                "dlr": self.dlr,
+                "deconv_filters": self.deconv_filters,
+                "deconv_kernels": self.deconv_kernels,
+                "g_opt_args": self.g_opt_args,
+                "d_opt_args": self.d_opt_args,
             }
         )
 
@@ -49,17 +52,48 @@ class BaseModel:
         self.conv_kernels = config.get("conv_kernels", CONFIG.conv.kernels)
         self.res_filters = config.get("res_filters", CONFIG.residual.filters)
         self.res_kernels = config.get("res_kernels", CONFIG.residual.kernels)
-        self.glr = config.get("glr", CONFIG.generator.lr)
-        self.dlr = config.get("dlr", CONFIG.discriminator.lr)
+        self.deconv_filters = config.get("deconv_filters", CONFIG.deconv.filters)
+        self.deconv_kernels = config.get("deconv_kernels", CONFIG.deconv.kernels)
+        self.g_opt_args = config.get("g_opt_args", CONFIG.generator.opt_kwargs)
+        self.d_opt_args = config.get("d_opt_args", CONFIG.discriminator.opt_kwargs)
+
+    @property
+    def built(self):
+        _built = bool(self)
+        if not _built:
+            if self.generator is not None:
+                print("Generator built")
+            if self.discriminator is not None:
+                print("Discriminator built")
+        return _built
 
     def build(
-        self, model: Optional[str] = None, load_weights=False, dir=None, **kwargs
+        self,
+        model: Optional[str] = None,
+        load_weights=False,
+        dir=None,
+        in_scope=False,
+        **kwargs,
     ):
         """
         If model is specified, Builds/Creates the model.
         Else,/Creates both, the Generator and the Discriminator.
+
+        If the build method is called inside the scope of a
+        tf.distribute.Strategy use in_scope = True, else the model
+        is created inside the scope of CONFIG.device's default
+        strategy.
         """
-        with distribution_strategy(device=CONFIG.device).scope():
+        if self:
+            return
+
+        scope = (
+            nullcontext()
+            if in_scope
+            else distribution_strategy(device=CONFIG.device).scope()
+        )
+
+        with scope:
             if not model or model.lower() == "generator":
                 self.generator = create_generator(
                     name=self.name + "_Generator",
@@ -68,6 +102,8 @@ class BaseModel:
                     conv_kernels=self.conv_kernels,
                     res_filters=self.res_filters,
                     res_kernels=self.res_kernels,
+                    deconv_filters=self.deconv_filters,
+                    deconv_kernels=self.deconv_kernels,
                     **kwargs,
                 )
                 if load_weights:
@@ -206,3 +242,6 @@ class BaseModel:
             # if isinstance(_vg, Iterable) and isinstance(_vg, Iterable):
             #     return _vg + _vd
             return [_vg, _vd]
+
+    def __bool__(self):
+        return self.generator is not None and self.discriminator is not None
