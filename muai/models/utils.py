@@ -1,10 +1,12 @@
 """
 Defines functions to create models.
 """
-from ..api import config
 import typing
 import tensorflow as tf
 from math import log2
+
+from ..api import config
+from ..api.decorator import _register as REGISTERED
 
 
 def InceptionBlock(filters: int, kernels: typing.List, *, inputs, name, **kwargs):
@@ -119,6 +121,18 @@ def create_generator(
     """
     res_filters length = 2*conv_filters -1
     """
+    if REGISTERED["generator"]:
+        kwargs.update(
+            dict(
+                conv_filters=conv_filters,
+                conv_kernels=conv_kernels,
+                res_filters=res_filters,
+                res_kernels=res_kernels,
+                deconv_filters=deconv_filters,
+                deconv_kernels=deconv_kernels,
+            )
+        )
+        return REGISTERED["generator"](name=name, input_shape=input_shape, **kwargs)
     out = inputs = tf.keras.layers.Input(shape=input_shape)
     skips = []
     for i, filter in enumerate(conv_filters):
@@ -169,6 +183,15 @@ def create_discriminator(
     Creates a discriminator. Downsamples the input by
     a factor of len(conv_filters).
     """
+    if REGISTERED["discriminator"]:
+        kwargs.update(
+            dict(
+                conv_filters=conv_filters,
+                conv_kernels=conv_kernels,
+                res_filters=res_filters,
+            )
+        )
+        return REGISTERED["discriminator"](name=name, input_shape=input_shape, **kwargs)
     out = inputs = tf.keras.Input(shape=input_shape)
     skips = []
     for i, filter in enumerate(conv_filters):

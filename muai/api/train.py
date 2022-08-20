@@ -1,4 +1,6 @@
+from contextlib import nullcontext
 from datetime import datetime
+from collections import deque
 from tqdm.autonotebook import tqdm
 import tensorflow as tf
 
@@ -53,6 +55,7 @@ class Trainer:
         self.verbose = verbose
         self.save_dir = save_dir
         self.strategy = distribution_strategy(device)
+        self.buffer = deque(maxlen=CONFIG.loss_buffer)
         self.device = device
 
     def build(self, acapella, instrumental, mixer, **kwargs):
@@ -290,16 +293,6 @@ class Trainer:
                         acapella.generator.trainable_variables,
                     )
                 )
-                self.optimizer["ad_opt"].apply_gradients(
-                    zip(
-                        tape.gradient(
-                            meteric["ad_loss"],
-                            acapella.discriminator.trainable_variables,
-                        ),
-                        acapella.discriminator.trainable_variables,
-                    )
-                )
-
                 self.optimizer["ig_opt"].apply_gradients(
                     zip(
                         tape.gradient(
@@ -309,16 +302,6 @@ class Trainer:
                         instrumental.generator.trainable_variables,
                     )
                 )
-                self.optimizer["id_opt"].apply_gradients(
-                    zip(
-                        tape.gradient(
-                            meteric["id_loss"],
-                            instrumental.discriminator.trainable_variables,
-                        ),
-                        instrumental.discriminator.trainable_variables,
-                    )
-                )
-
                 self.optimizer["mg_opt"].apply_gradients(
                     zip(
                         tape.gradient(
@@ -327,14 +310,44 @@ class Trainer:
                         mixer.generator.trainable_variables,
                     )
                 )
-                self.optimizer["md_opt"].apply_gradients(
-                    zip(
-                        tape.gradient(
-                            meteric["md_loss"], mixer.discriminator.trainable_variables
-                        ),
-                        mixer.discriminator.trainable_variables,
+
+                if len(self.buffer) >= CONFIG.loss_buffer:
+                    self.optimizer["ad_opt"].apply_gradients(
+                        zip(
+                            tape.gradient(
+                                self.buffer[0]["ad_loss"],
+                                acapella.discriminator.trainable_variables,
+                            ),
+                            acapella.discriminator.trainable_variables,
+                        )
                     )
+                    self.optimizer["id_opt"].apply_gradients(
+                        zip(
+                            tape.gradient(
+                                self.buffer[0]["id_loss"],
+                                instrumental.discriminator.trainable_variables,
+                            ),
+                            instrumental.discriminator.trainable_variables,
+                        )
+                    )
+                    self.optimizer["md_opt"].apply_gradients(
+                        zip(
+                            tape.gradient(
+                                self.buffer[0]["md_loss"],
+                                mixer.discriminator.trainable_variables,
+                            ),
+                            mixer.discriminator.trainable_variables,
+                        )
+                    )
+
+                self.buffer.append(
+                    {
+                        "ad_loss": meteric["ad_loss"],
+                        "id_loss": meteric["id_loss"],
+                        "md_loss": meteric["md_loss"],
+                    }
                 )
+
                 self.metrics["ag_loss"].update_state(meteric["ag_loss"])
                 self.metrics["ig_loss"].update_state(meteric["ig_loss"])
                 self.metrics["mg_loss"].update_state(meteric["mg_loss"])
@@ -350,6 +363,7 @@ class Trainer:
 
             self.strategy.run(_step, args=(next(data_iterator)))
 
+        self.buffer.clear()
         for epoch in range(self.epochs):
             if self.verbose > 0:
                 print(f"Epoch: {epoch}/{self.epochs}")
@@ -358,29 +372,47 @@ class Trainer:
                 tqdm(
                     steps,
                     bar_format="{n_fmt}/{total_fmt} |{bar}| {elapsed} {rate_inv_fmt}",
+                    position=0,
+                    total=self.steps_per_epoch,
                 )
                 if self.verbose == 1
                 else steps
             )
             data = iter(self.dataset)
-            for _ in steps:
-                train_step(data)
-                if self.verbose > 0:
-                    print(
-                        f"Model\tGen Loss  \tGen Acc   \tDisc Loss \tDisc Acc  \n"
-                        f"Acap.\t{self.metrics['ag_loss'].result(): <10.5f}\t"
-                        f"{self.metrics['ag_acc'].result()*100: <10.5f}\t"
-                        f"{self.metrics['ad_loss'].result(): <10.5f}\t"
-                        f"{self.metrics['ad_acc'].result()*100: <10.5f}\n"
-                        f"Instr\t{self.metrics['ig_loss'].result(): <10.5f}\t"
-                        f"{self.metrics['ig_acc'].result()*100: <10.5f}\t"
-                        f"{self.metrics['id_loss'].result(): <10.5f}\t"
-                        f"{self.metrics['id_acc'].result()*100: <10.5f}\n"
-                        f"Mixer\t{self.metrics['mg_loss'].result(): <10.5f}\t"
-                        f"{self.metrics['mg_acc'].result()*100: <10.5f}\t"
-                        f"{self.metrics['md_loss'].result(): <10.5f}\t"
-                        f"{self.metrics['md_acc'].result()*100: <10.5f}\n"
-                    )
+            with nullcontext() if self.verbose == 0 else tqdm(
+                total=self.steps_per_epoch, position=1, bar_format="{desc}", desc=""
+            ) as ln1, tqdm(
+                total=self.steps_per_epoch, position=2, bar_format="{desc}", desc=""
+            ) as ln2, tqdm(
+                total=self.steps_per_epoch, position=3, bar_format="{desc}", desc=""
+            ) as ln3, tqdm(
+                total=self.steps_per_epoch, position=4, bar_format="{desc}", desc=""
+            ) as ln4:
+
+                for _ in steps:
+                    train_step(data)
+                    if self.verbose > 0:
+                        ln1.set_description(
+                            f"Model\tGen Loss  \tGen Acc   \tDisc Loss \tDisc Acc  "
+                        )
+                        ln2.set_description(
+                            f"Acap.\t{self.metrics['ag_loss'].result(): <10.5f}\t"
+                            f"{self.metrics['ag_acc'].result()*100: <10.5f}\t"
+                            f"{self.metrics['ad_loss'].result(): <10.5f}\t"
+                            f"{self.metrics['ad_acc'].result()*100: <10.5f}"
+                        )
+                        ln3.set_description(
+                            f"Instr\t{self.metrics['ig_loss'].result(): <10.5f}\t"
+                            f"{self.metrics['ig_acc'].result()*100: <10.5f}\t"
+                            f"{self.metrics['id_loss'].result(): <10.5f}\t"
+                            f"{self.metrics['id_acc'].result()*100: <10.5f}"
+                        )
+                        ln4.set_description(
+                            f"Mixer\t{self.metrics['mg_loss'].result(): <10.5f}\t"
+                            f"{self.metrics['mg_acc'].result()*100: <10.5f}\t"
+                            f"{self.metrics['md_loss'].result(): <10.5f}\t"
+                            f"{self.metrics['md_acc'].result()*100: <10.5f}"
+                        )
             self.checkpoint.save(CONFIG.checkpoint_dir)
             with summary_writer.as_default():
                 tf.summary.scalar(
@@ -453,3 +485,4 @@ class Trainer:
             self.metrics["ad_acc"].reset_states()
             self.metrics["id_acc"].reset_states()
             self.metrics["md_acc"].reset_states()
+        self.buffer.clear()

@@ -70,6 +70,7 @@ config = Config(
                 filters=[4, 4, 4, 16, 4, 4, 4], kernels=16, activation=tf.nn.relu
             ),
         ),
+        loss_buffer=10,
         checkpoint_dir=".checkpoint",
         data_dir="data",
         log_dir="logs",

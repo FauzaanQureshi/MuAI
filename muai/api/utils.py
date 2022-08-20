@@ -2,6 +2,8 @@ import os
 from functools import wraps
 import tensorflow as tf
 
+from .decorator import _register as REGISTERED
+
 
 __all__ = [
     "distribution_strategy",
@@ -9,6 +11,8 @@ __all__ = [
 
 
 def distribution_strategy(device: str):
+    if REGISTERED["strategy"]:
+        return REGISTERED["strategy"](device)
     if device.lower() == "cpu":
         return tf.distribute.get_strategy()
     if device.lower() == "gpu":
